@@ -1,0 +1,1491 @@
+<P>
+
+<BR>
+
+<CENTER>
+
+<FONT SIZE = 6, COLOR="#000066"> <B> ALY 6015 (Intermediate Analytics)</Br>
+
+Team Project: Final Report </Br> FIFA Insight Crew </Br></FONT>
+
+Team Members: Sankalp Susil Kumar Biswal, Sanchi Gupta, Sharanya Badrinarayanan, Ratnesh Mishra, Rhea John Thoppil </Br></FONT>
+
+<FONT SIZE = 4, COLOR="#660000"> Instructor: Vladimir Shapiro, Northeastern University </FONT>
+
+</CENTER>
+
+</B>
+
+# [I. Introduction]{.underline}
+This report by the FIFA Insight Crew aims to leverage statistical analysis and predictive modeling to uncover insights within the realm of football analytics. Utilizing a comprehensive dataset from FIFA, the team explores four critical questions that span predictive modeling and hypothesis testing. The objective is to discern the factors influencing players' performance ratings, positions, pace in relation to age, and market values. By employing methodologies such as regression analysis, classification, and hypothesis testing, this study endeavors to provide an understanding of player dynamics and valuation in football.
+
+
+**Importing the necessary libraries**
+
+```{r message=FALSE}
+library(dplyr)
+library(corrplot)
+library(tidyr)
+require(glmnet)
+require(caTools)
+library(tidyverse)
+library(GGally)
+library(smotefamily)
+library(caret)
+library(knitr)
+library(kableExtra)
+library(ipred)
+library(car)
+library(class)
+library(ggplot2)
+library(stats)
+```
+
+------------------------------------------------------------------------
+
+# [II. Methods]{.underline}
+
+|     |                                                                                                                                                                                                                          |                                              |
+|-------------------|----------------------------------|-------------------|
+|     | **Goal**                                                                                                                                                                                                                 | **Method**                                   |
+| Q1  | Predict the Overall Performance Rating of football players based on key performance attributes.                                                                                  | Predictive Modeling with Multiple Regression |
+| Q2  | Classify a player's as Goalkeeper, Defender, Midfielder or Forward based on their individual performance attributes such as pace, shooting, passing, dribbling, defending, physic, overall, potential? | Predictive Modeling with Classification      |
+| Q3  | Test, whether a player's age affect their average pace (a combination of acceleration and sprint speed)?                                                                                                                       | Hypothesis testing                           |
+| Q4  | Predict a player's market value based on attributes such as age, overall rating, potential, and specific skill attributes (passing, dribbling, shooting) and other variables?                                            | Predictive Modeling with Regression          |
+
+------------------------------------------------------------------------
+
+# [III. Analysis]{.underline}
+
+## Descriptive Statistics
+
+```{r}
+# Loading the dataset
+df <- read.csv("players_22.csv")
+
+# Viewing Summary 
+df_summary <- summary(df)
+kable(df_summary, 
+      format = "html", 
+      caption = "Table 1: Summary Statistics of FIFA Dataset") %>%
+                         kable_styling(bootstrap_options = c("striped", "hover", "condensed",                                                               "responsive"))
+
+```
+
+# Business Questions
+
+### [**Question 1:**]{.underline} **To Predict the Overall Performance Rating of football players based on key performance attributes.**
+
+### [Methodology- Predictive Modeling with Multiple Regression]{.underline}
+
+1.  **Data Preprocessing:**
+
+    -   Identify and handle missing values in the key performance attributes (e.g., pace, shooting, dribbling) and the target variable (Overall Performance Rating).
+
+    -   Examine potential outliers in the performance attributes and the target variable. Decide on an appropriate strategy for treating outliers, such as transformation or removal.
+
+    -   If the key performance attributes have different scales, consider scaling or normalizing them to ensure that they contribute equally to the regression model.
+
+2.  **Exploratory Data Analysis:**
+
+    -   Assess the correlation between key performance attributes and the target variable. Select attributes with strong correlations for inclusion in the model.
+
+3.  **Splitting the dataset:**
+
+    -   Divide the dataset into training and testing sets. This allows you to train the model on one subset and evaluate its performance on another, providing an estimate of the model's generalization to new data. Split, considering 80% for training and 20% for testing.
+
+4.  **Model Building:**
+
+    -   Implement multiple regression by including the selected key performance attributes (e.g., pace, shooting, dribbling) as predictors in the model.
+
+5.  **Model Evaluation:**
+
+    -   Evaluate the model using appropriate metrics such as Mean Squared Error (MSE) and Root Mean Squared Error (RMSE).
+
+-   **Why use Multiple Regression?**
+
+    Multiple regression allows you to examine how changes in each key performance attribute relate to changes in the Overall Performance Rating while holding other variables constant. This is important when assessing the unique contribution of each attribute. The inclusion of multiple relevant predictors can enhance the model's predictive accuracy. By incorporating a combination of key performance attributes, the model can better capture the variability in the Overall Performance Rating.
+
+    ------------------------------------------------------------------------
+
+## [Step 1: Data Preprocessing]{.underline}
+
+```{r}
+#Check for missing values
+missing_values <- colSums(is.na(df))
+names(missing_values)
+
+# (OpenAI,2024)
+#Handle missing values (e.g., fill with mean or median)
+df$pace[is.na(df$pace)] <- mean(df$pace, na.rm = TRUE)
+df$shooting[is.na(df$shooting)] <- mean(df$shooting, na.rm = TRUE)
+df$dribbling[is.na(df$dribbling)] <- mean(df$dribbling, na.rm = TRUE)
+
+#Winsorizing outliers in the 'pace' column
+q<-quantile(df$pace, c(0.01, 0.99), na.rm = TRUE)
+df$pace[df$pace < q[1]] <- q[1]
+df$pace[df$pace > q[2]] <- q[2]
+```
+
+------------------------------------------------------------------------
+
+## [Step 2: Exploratory Data Analysis-1]{.underline}
+
+-   **Correlation Matrix**
+
+```{r}
+# Select relevant variables
+selected_vars <- df[, c("overall", "pace", "shooting", "passing", "dribbling", "defending", "physic", "attacking_crossing", "attacking_finishing", "attacking_heading_accuracy", "attacking_short_passing", "attacking_volleys", "skill_dribbling", "skill_curve")]
+
+
+# Remove rows with missing values in any of the selected variables
+selected_vars <- selected_vars[complete.cases(selected_vars), ]
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(selected_vars)
+
+# Find the top 5 most correlated variables with 'overall'
+top_correlations <- sort(correlation_matrix[,"overall"], decreasing = TRUE)[2:6]
+print("Top 5 most correlated variables with 'overall':")
+print(top_correlations)
+
+# Correlation matrix visualization
+corrplot(correlation_matrix, 
+         method = "circle",
+         type = "upper",
+         order = "hclust",
+         tl.col = "black",
+         tl.srt = 45,
+         tl.cex = 0.5,
+         addrect = 3,
+         title = "Figure 1.1: Correlation Matrix",
+         mar = c(0, 0, 1, 0))
+
+```
+
+**Interpretation of Figure 1.1: Correlation Matrix**
+
+-   The correlation matrix is a table that shows the correlation coefficients between different variables. In this case, it represents the correlation between the attributes: overall, pace, shooting, passing, dribbling, defending, physic, attacking crossing, attacking finishing, attacking heading accuracy, attacking short passing, attacking volleys, skill dribbling, and skill curve.
+
+-   The values in the matrix range from -1 to 1. A value closer to 1 indicates a strong positive correlation, while a value closer to -1 indicates a strong negative correlation. A value of 0 suggests no linear correlation.
+
+-   The color intensity and the size of the circles in the matrix provide a visual representation of the correlation strength. Larger and darker circles signify stronger correlations.
+
+------------------------------------------------------------------------
+
+-   **Boxplots for Top 5 Correlated Attributes with 'overall'**
+
+```{r}
+# Find the top 5 most correlated variables with 'overall'
+top_correlations <- sort(correlation_matrix[,"overall"], decreasing = TRUE)[2:6]
+
+# Filter the data for the top 5 correlated variables
+selected_vars_top5_1 <- subset(df, select = c("overall", names(top_correlations)))
+
+
+# Filter the data for the top 5 correlated variables
+selected_vars_top5 <- selected_vars_top5_1 %>%
+  pivot_longer(cols = names(top_correlations), names_to = "Attribute", values_to = "Value")
+
+# Boxplots for individual attributes
+ggplot(selected_vars_top5, aes(x = Attribute, y = Value)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Figure 1.2: Boxplots for Top 5 Correlated Attributes with 'overall' Rating",
+       caption = "Note: The box represents the interquartile range (IQR), with the line inside indicating the median value.",
+       x = "Attribute",
+       y = "Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 10, hjust = 1))
+
+
+```
+
+**Interpretation of Figure 1.2: Boxplots for Attributes**
+
+-   The boxplots show the distribution of values for each attribute (attack short passing, dribbling, passing, physic and skill dribbling).
+
+-   The box represents the interquartile range (IQR), with the median line inside the box.
+
+-   Whiskers extend to the minimum and maximum values within 1.5 times the IQR from the lower and upper quartiles. Points beyond the whiskers are considered potential outliers.
+
+------------------------------------------------------------------------
+
+## [Step 3: Data Splitting]{.underline}
+
+```{r}
+
+# Select relevant variables
+selected_vars <- df[, c("overall", "passing", "dribbling", "physic", "attacking_short_passing", "skill_dribbling")]
+
+# Remove rows with missing values in any of the selected variables
+selected_vars <- selected_vars[complete.cases(selected_vars), ]
+
+# Split the data into training and testing sets
+set.seed(123) 
+train_indices <- sample(1:nrow(selected_vars), 0.8 * nrow(selected_vars))
+train_data <- selected_vars[train_indices, ]
+test_data <- selected_vars[-train_indices, ]
+```
+
+------------------------------------------------------------------------
+
+## [Step 4: Model Building]{.underline}
+
+```{r}
+# Scaling on the predictors
+scaled_train_data <- scale(train_data[, -1])
+scaled_test_data <- scale(test_data[, -1])
+
+# Convert the 'overall' column to a matrix
+response_train <- as.matrix(train_data$overall)
+response_test <- as.matrix(test_data$overall)
+
+# (Brownlee, 2019)
+# Perform multiple regression with regularization
+lasso_model <- glmnet(x = scaled_train_data, y = response_train, alpha = 1)
+
+#(Lasso Regression in R Programming, 2023)
+# Choose the best lambda based on cross-validation 
+cv_result <- cv.glmnet(x = scaled_train_data, y = response_train, alpha = 1)
+best_lambda <- cv_result$lambda.min
+
+# Refit the model with the best lambda
+lasso_model_best <- glmnet(x = scaled_train_data, y = response_train, alpha = 1, lambda = best_lambda)
+```
+
+```{r,  fig.width=10, fig.height=4}
+  
+# Extract the coefficients for each lambda into a list of matrices
+coef_list <- lapply(lasso_model$lambda, function(lambda) {
+  as.matrix(coef(lasso_model, s = lambda))
+})
+
+# Code Below (OpenAI,2024)
+# Convert the list of matrices to a list of data frames, ensuring unique column names
+coef_dfs <- lapply(seq_along(coef_list), function(i) {
+  coef_matrix <- coef_list[[i]]
+  lambda_value <- lasso_model$lambda[i]
+  
+  coef_df <- as.data.frame(coef_matrix)
+  names(coef_df) <- c("coefficient")
+  coef_df$variable <- row.names(coef_matrix)
+  coef_df$lambda <- lambda_value
+  coef_df <- coef_df %>%
+    dplyr::select(variable, lambda, coefficient) %>%
+    dplyr::filter(variable != "(Intercept)") # Exclude intercept
+  return(coef_df)
+})
+
+# Bind all data frames into one
+coefficients_df <- bind_rows(coef_dfs)
+
+# Plotting with ggplot
+ggplot(coefficients_df, aes(x = log(lambda), y = coefficient, color = variable)) +
+  geom_line() +
+  labs(x = "Log(Lambda)", y = "Coefficient", title = "Figure 1.3: Lasso Regularization Path") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+```
+
+**Interpretation of Figure 1.3: Lasso Regularization Path**
+
+-   The plot illustrates how different variables change with respect to their coefficients as the log(λ) value varies. Each variable is represented by a different colored line on the graph.
+
+-   This plot visualizes how different variables respond to Lasso regularization. The varying coefficients provide insights into the impact of regularization strength on these features. For example, the Red Line (attacking_short_passing) initially has positive coefficients, but sharply decreases after reaching its peak. And Green Line (passing) maintains positive coefficients across all values of log(λ).
+
+-   As log(lambda) increases, the coefficients tend toward zero, effectively shrinking the impact of the features.
+
+
+*In summary, a Lasso plot provides insights into the selection and impact of variables under different regularization strengths. Variables with non-zero coefficients at the chosen lambda are considered important in the final model. The sparsity induced by Lasso aids in feature selection, making the model more interpretable and potentially avoiding overfitting.*
+
+------------------------------------------------------------------------
+
+## [Step 5: Model Evaluation]{.underline}
+
+```{r}
+# Make predictions on the test set
+predictions <- predict(lasso_model_best, newx = scaled_test_data)
+
+# Evaluate the model performance
+mse <- mean((predictions - response_test)^2)
+print(paste("Mean Squared Error on Test Set:", mse))
+
+# Display the coefficients of the selected variables
+coef(lasso_model_best)
+
+# Calculate the RMSE
+rmse <- sqrt(mean((predictions - response_test)^2))
+
+# Print the RMSE
+print(paste("Root Mean Squared Error on Test Set:", rmse))
+```
+
+**Interpretation of Train and Test Set Predictions:**
+
+-   Mean Squared Error (MSE) on Test Set: This metric quantifies the average prediction error in the test set. An MSE of 9.53 suggests, on average, the model's predictions in the test set are off by approximately 9.53 units of overall performance.
+
+-   Root Mean Squared Error (RMSE) on Test Set: This value of 3.086, is a measure of the average prediction error of the model on the test set. A lower RMSE indicates better predictive performance. The model is doing a good job in making accurate predictions on the test set.
+
+```{r}
+# (How to Plot Predicted Values in R, 2021)
+# Create a data frame with actual and predicted values 
+actual_vs_predicted <- data.frame(Actual = response_test, Predicted = as.vector(predictions))
+
+# Plot Actual vs. Predicted using ggplot2
+ggplot(actual_vs_predicted, aes(x = Actual, y = Predicted)) +
+  geom_point(color = "blue", size = 3) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Figure 1.4: Actual vs Predicted",
+       x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+**Interpretation of Figure 1.4: Actual Vs Predicted Plot**
+
+-   Each point on the plot represents an observation in the test set. The x-coordinate of the point corresponds to the actual value, and the y-coordinate corresponds to the predicted value from the model.
+
+-   The blue points are the actual vs predicted data points. Ideally, they should fall along a diagonal line. Points above the line indicate overpredictions, and points below the line indicate underpredictions.
+
+-   The dashed red line represents the ideal scenario where the predicted values perfectly match the actual values. Points close to this line indicate accurate predictions.
+
+
+
+
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+### [**Question 2:**]{.underline} **Classify a player as Goalkeeper, Defender, Midfielder or Forward based on their individual performance attributes such as pace, shooting, passing, dribbling, defending, physic, overall, potential?**
+
+### [Methodology- Predictive Modeling with Classification]{.underline}
+
+1.  **Data Preprocessing:**
+
+    -   Clean the dataset by handling missing values, outliers, and inconsistencies.
+
+    -   Normalize or scale numerical features to ensure uniformity.
+
+2.  **Exploratory Data Analysis:**
+
+    -   Identify and select relevant features (as stated above) that significantly contribute to predict 'club_position.'
+
+3.  **Splitting the dataset:**
+
+    -   Divide the dataset into training and testing sets to evaluate the model's performance accurately. Split, considering 70% for training and 30% for testing.
+
+4.  **Model Building:**
+
+    -   Implement the K-Nearest Neighbors (KNN) algorithm for the chosen features.
+
+    -   Train the model using the training dataset.
+
+5.  **Model Evaluation:**
+
+    -   Evaluate the model's performance on the testing dataset using appropriate metrics such as accuracy, precision, recall, and F1 score.
+
+-   **Why using K-Nearest Neighbors (KNN)?**
+
+    KNN is suitable for classifying players into positions due to its simplicity, effectiveness with complex decision boundaries, and flexibility in handling various data types without assuming data distribution, making it ideal for the diverse and nuanced attributes of football players.
+
+    This classification question is important as it relates to determining a player's most suitable position on the football field based on their skill set and physical attributes. The ability to accurately classify a player's position can be invaluable for team formation, scouting, and tactical analysis.
+
+    ------------------------------------------------------------------------
+
+## [Step 1: Data Preprocessing]{.underline}
+
+```{r}
+# Select only numerical features for the pairwise comparison
+features <- c('pace', 'shooting', 'passing', 'dribbling', 'defending', 'physic', 'overall', 'potential')
+
+# Selecting all the numeric columns and omitting NA values
+df_numeric <- df %>%
+  select(all_of(features)) %>%
+  select_if(is.numeric) %>%
+  na.omit()
+```
+
+------------------------------------------------------------------------
+
+## [Step 2: Exploratory Data Analysis-2]{.underline}
+
+```{r}
+# Creating a column with simplified positions since our column "club_postions" has more than 10 postions such as LW,RW,ST,CF,CAM,CDM,GK,CB,RB etc. 
+
+df$simplified_position <- dplyr::case_when(
+  df$club_position %in% c("GK") ~ "Goalkeeper",
+  df$club_position %in% c("LCB", "RCB", "CB", "LB", "RB", "LWB", "RWB", "RES") ~ "Defender",
+  df$club_position %in% c("RCM", "LCM", "CDM", "RDM", "LDM", "CM", "CAM", "RM", "LM", "RAM", "LAM") ~ "Midfielder",
+  df$club_position %in% c("RW", "ST", "LW", "CF", "RS", "LS", "RF", "LF", "SUB") ~ "Forward",
+  TRUE ~ as.character(df$club_position) 
+)
+
+# Converting the new column to a factor
+df$simplified_position <- as.factor(df$simplified_position)
+
+#Data Cleaning- Removing rows with "" values
+matches <- grepl("", df$simplified_position)
+df <- df[df$simplified_position != "", ]
+
+# Plotting bargraph 
+ggplot(df, aes(x = simplified_position)) +
+  geom_bar(fill = "grey") +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5, position = position_stack(vjust = 1)) +
+  theme_minimal() +
+  labs(title = "Figure 2.1: Distribution of Simplified Club Positions", x = "Simplified Club Position",
+       caption = "Note : Bar plot illustrating the distribution of players across simplified club positions within the dataset. ",y = "Count")
+```
+
+**Interpretation of Figure 2.1: Distribution of Simplified Club Positions**
+
+This chart illustrates the count of players in a dataset categorized by four simplified club positions: Defender, Forward, Goalkeeper, and Midfielder. The position of Forward is the most common among this group of players. The data contains a relatively balanced number of Defenders and Midfielders, with Defenders being more numerous. Goalkeepers are the least represented in the dataset. Moving forward, we'll deal with this **class imbalance**.
+
+### Data Processing
+
+-   We'll conduct oversampling in order to address the class imbalance.
+
+    ```{r}
+    table(df$simplified_position)
+
+    # Split the dataset by class
+    defender_data <- df[df$simplified_position == "Defender", ]
+    goalkeeper_data <- df[df$simplified_position == "Goalkeeper", ]
+    midfielder_data <- df[df$simplified_position == "Midfielder", ]
+    forward_data <- df[df$simplified_position == "Forward", ]
+
+    # Calculate current sizes
+    n_defender <- nrow(defender_data)
+    n_goalkeeper <- nrow(goalkeeper_data)
+    n_midfielder <- nrow(midfielder_data)
+    n_forward <- nrow(forward_data)
+
+    # Calculate replication factors to reach 9,668 observations for each class
+    factor_defender <- round(n_forward / n_defender , digits = 2) 
+    factor_goalkeeper <- round(n_forward / n_goalkeeper, digits = 2)
+    factor_midfielder <- round(n_forward / n_midfielder, digits = 2)
+
+
+    # Replicate the data for each class using the calculated factors
+    # (OpenAI, 2024)
+    oversampled_defender_data <- defender_data[sample(nrow(defender_data),(factor_defender*n_defender), replace = TRUE), ]
+      
+
+    oversampled_goalkeeper_data <- goalkeeper_data[sample(nrow(goalkeeper_data),(factor_goalkeeper*n_goalkeeper), replace = TRUE), ]
+
+    oversampled_midfielder_data <- midfielder_data[sample(nrow(midfielder_data),(factor_midfielder*n_midfielder), replace = TRUE), ]
+
+
+    # Combine the oversampled data with the 'Forward' class data
+    oversampled_data <- rbind(oversampled_defender_data, oversampled_goalkeeper_data, oversampled_midfielder_data, forward_data )
+
+    # Shuffle the combined data to mix the observations
+    set.seed(123)
+
+    oversampled_data <- oversampled_data[sample(nrow(oversampled_data)), ]
+
+    table(oversampled_data$simplified_position)
+    ```
+
+-   Now, all the classes are of equal length.
+
+-   **Selecting all the features relevant to player positions**
+
+```{r}
+# Select only numerical features for the pairwise comparison
+
+features <- c('pace', 'shooting', 'passing', 'dribbling', 'defending', 'physic', 'overall', 'potential')
+
+# For boxplots of each feature by simplified_position, we melt the data and use ggplot
+df_melted <- oversampled_data %>%
+  select(simplified_position, all_of(features)) %>%
+  gather(key = "feature", value = "value", -simplified_position) %>% # Convert to long format
+  na.omit() # Omit missing values
+
+ggplot(df_melted, aes(x = simplified_position, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~feature, scales = 'free_y') + # Create a separate plot for each feature
+  theme_minimal() +
+  labs(title = "Figure 2.2: Performance Metrics by Club Position", x = "Simplified Club Position",
+       caption = "Note: Box plots displaying the distribution of various performance metrics  across simplified club positions ",y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+**Interpretation of Figure 2.2: Performance Metrics by Club Position**
+
+-   **Defenders** are rated highest in defending, which is consistent with their role in preventing the opposition from scoring.
+
+-   **Forwards** excel in shooting and pace, indicating their role in fast attacks and goal-scoring opportunities.
+
+-   **Goalkeepers** show high ratings in defending, underscoring their role in stopping shots on goal, but they have lower scores in outfield skills like pace, shooting, and dribbling.
+
+-   **Midfielders** have the highest ratings in passing, reflecting their central role in creating plays and distributing the ball.
+
+Overall ratings are relatively even across all positions, suggesting a balanced distribution of general skill levels. The metrics align well with the typical skillsets required for each position in football.
+
+------------------------------------------------------------------------
+
+## [Step 3: Data Splitting]{.underline}
+
+```{r}
+# Creating df_knn including variables relevant to modelling
+df_knn <- oversampled_data %>%
+  select(pace, shooting, passing, dribbling, defending, physic, overall, potential, simplified_position)
+
+# Omitting NA values
+df_knn <- df_knn %>%
+  mutate(across(c(pace, shooting, passing, dribbling, defending, physic, overall, potential), ~ifelse(is.na(.), median(., na.rm = TRUE), .)))
+
+# Removing empty string "" from target variable(simplified_position)
+df_knn$simplified_position <- factor(df_knn$simplified_position, levels = setdiff(levels(df_knn$simplified_position), ""))
+
+# Splitting the dataset
+set.seed(123)
+trainIndex <- createDataPartition(df_knn$simplified_position, p = 0.7, list = FALSE)
+trainData <- df_knn[trainIndex, ]
+testData <- df_knn[-trainIndex, ]
+
+# Selecting only the features for scaling
+trainDataScaled <- scale(trainData[, features])
+testDataScaled <- scale(testData[, features], center = attr(trainDataScaled, "scaled:center"), scale = attr(trainDataScaled, "scaled:scale"))
+```
+
+------------------------------------------------------------------------
+
+## [Step 4: Model Building]{.underline}
+
+-   We're using K-Nearest Neighbors for this problem.
+
+-   Selection of "K" is done via a heuristic approach wherein we take the square root of the number of observations.
+
+```{r}
+# Model Building: KNN
+set.seed(123)
+k <- sqrt(nrow(trainData))  # Choosing k, (OenAI,2024)
+k <- as.integer(k)  # Ensure k is an integer
+knnModel <- knn(train = trainDataScaled, test = testDataScaled, cl = trainData$simplified_position, k = k)
+
+```
+
+------------------------------------------------------------------------
+
+## [Step 5: Model Evaluation]{.underline}
+
+```{r}
+# Model Evaluation
+confMat <- confusionMatrix(knnModel, as.factor(testData$simplified_position))
+print(confMat)
+
+predicted <- factor(knnModel, levels = levels(testData$simplified_position))
+true_values <- factor(testData$simplified_position)
+
+# Accessing individual metrics
+accuracy <- confMat$overall['Accuracy']
+precision <- confMat$byClass['Precision']
+recall <- confMat$byClass['Recall']
+F1 <- confMat$byClass['F1']
+
+# Printing the metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Precision:", precision))
+print(paste("Recall:", recall))
+print(paste("F1 Score:", F1))
+```
+
+#### Confusion Matrix:
+
+-   The matrix compares the predicted classifications versus the actual (reference) classifications for four different positions: Defender, Forward, Goalkeeper, and Midfielder.
+
+-   The diagonal cells (top-left to bottom-right) show the number of correct predictions for each position. For instance, the model correctly predicted 'Defender' 1929 times and 'Goalkeeper' 2876 times.
+
+-   Off-diagonal cells show misclassifications. For example, 881 instances of a 'Defender' were incorrectly predicted as 'Forward'.
+
+**Overall Statistics:**
+
+-   **Accuracy:** 0.6712, meaning the model correctly predicted the class about 67.12% of the time.
+
+-   **Kappa:** 0.5617, suggesting a moderate agreement between predictions and actual classifications, corrected for chance.
+
+-   **McNemar's Test P-Value:** Also less than 2.2e-16, indicating a significant difference in the predictive performance on the positive and negative classes.
+
+**Statistics by Class(Below we've explained for class "Defender", explanation is the same for other classes)**
+
+-   **Sensitivity:** Also known as the true positive rate. For 'Defender', it is 0.6638, meaning 66.38% of actual Defenders were correctly identified.
+
+-   **Specificity:** Also known as the true negative rate. For 'Defender', it is 0.8646, meaning 86.46% of non-Defenders were correctly identified as not being Defenders.
+
+-   **Pos Pred Value:** Positive Predictive Value or precision. For 'Defender', it is 0.6211, meaning when the model predicts 'Defender', it is correct 62.11% of the time.
+
+-   **Neg Pred Value:** Negative Predictive Value. For 'Defender', it is 0.8850, meaning when the model predicts 'not a Defender', it is correct 88.50% of the time.
+
+-   **Prevalence:** The actual occurrence rate in the dataset. For 'Defender', it is 0.2505, meaning 25.05% of the true classifications are 'Defender'.
+
+-   **Detection Prevalence:** The rate of predictions for a class. For 'Defender', it is 0.2677, meaning 26.77% of all predictions are for 'Defender'.
+
+-   **Balanced Accuracy:** The average of sensitivity and specificity. For 'Defender', it is 0.7642, which considers both false positives and false negatives.
+
+In summary, the model has an accuracy of over 67%, with varying performance across different classes. It is particularly good at predicting Goalkeepers (high sensitivity and specificity), likely due to distinct characteristics of this position. The model seems to be moderately reliable, but improvements could be made, especially in predicting Forward and Midfielder positions, which have lower sensitivity.
+
+[Q. Why are there 0's in the confusion matrix?]{.underline}
+
+A. The zeros indicate that the model never predicted a Forward as a Goalkeeper or a Midfielder as a Goalkeeper. This could be because in soccer, forwards and goalkeepers generally have very different roles and skill sets, so a good predictive model should not confuse the two. The same goes for midfielders and goalkeepers. If the model correctly identifies that forwards and midfielders are not goalkeepers (and vice versa), it suggests that the model has learned something meaningful about the features that distinguish these positions.
+
+#### Model Refinement
+
+-  Applying Bagging for improving our model score.
+-  nbagg = 10 indicates that 10 base models will be trained on different bootstrap samples of the training data, and their predictions will be aggregated to make the final predictions.(OpenAI,2024)
+
+```{r}
+# Bagging(OpenAI,2024) 
+set.seed(123)
+bagged_knn <- bagging(simplified_position ~ ., data = trainData, nbagg = 10, coob = TRUE)
+
+# Predict on test data
+pred <- predict(bagged_knn, newdata = testData)
+```
+
+### Final Evaluation
+
+```{r}
+# Evaluate the model
+confusionMatrix(pred, testData$simplified_position)
+```
+
+
+## Outcome
+
+**Confusion Matrix:**
+
+-   The diagonal values represent correct predictions for each class (Defender, Forward, Goalkeeper, Midfielder).
+
+-   The model predicted 'Defender' correctly 2350 times, 'Forward' 720 times, 'Goalkeeper' 2892 times, and 'Midfielder' 2767 times.
+
+-   The off-diagonal values represent misclassifications. For example, the model predicted 382 instances of actual 'Defenders' as 'Forwards' and 97 instances of actual 'Goalkeepers' as 'Defenders'.
+
+**Overall Statistics:**
+
+-   **Accuracy:** 0.8177, meaning the model correctly predicted the class approximately 81.77% of the time, which is quite high.
+
+-   **Kappa:** 0.7569, which indicates substantial agreement beyond chance between the predicted and reference classifications.
+
+**Statistics by Class(Below we've explained for class "Defender", explanation is the same for other classes)**
+
+-   **Sensitivity:** 0.8087 indicates that approximately 80.87% of the actual Defenders were correctly identified by the model.
+
+-   **Specificity:** 0.9118 means that about 91.18% of the time, the model correctly identified non-Defenders.
+
+-   **Positive Predictive Value (Precision):** 0.7539 suggests that when the model predicts an instance as a Defender, it is correct about 75.39% of the time.
+
+-   **Negative Predictive Value:** 0.9345 indicates that when the model predicts an instance is not a Defender, it is correct 93.45% of the time.
+
+-   **Prevalence:** 0.2505 shows that Defenders make up about 25.05% of the observations.
+
+-   **Detection Prevalence:** 0.2687 means that the model predicted the Defender class for 26.87% of the observations.
+
+-   **Balanced Accuracy:** 0.8602 is the average of sensitivity and specificity, giving a single measure of effectiveness for the Defender class.
+
+### **Comparing to the earlier results:**
+
+-   The accuracy has improved from approximately 67% to over 81%.
+
+-   The Kappa statistic has increased, indicating better agreement.
+
+-   There are no longer zeros for any class predictions in the confusion matrix, suggesting the model is now recognizing and predicting all classes.
+
+-   Sensitivity and precision have improved for predicting 'Forwards', as previously there were zeros indicating no 'Forwards' were predicted as 'Goalkeepers'.
+
+Overall, this model is performing significantly better than the previous one. There are no classes that the model fails to predict at all, and both the accuracy and Kappa statistics indicate a stronger model. The absence of zeros in the confusion matrix for actual vs. predicted classes suggests the model has become more balanced in its predictive ability across the different classes.
+
+```{r}
+# Create a data frame with sensitivity values (OpenAI,2024)
+sensitivity_data <- data.frame(
+  Class = rep(c("Defender", "Forward", "Goalkeeper", "Midfielder"), 2),
+  Sensitivity = c(0.6638, 0.26759, 0.9921, 0.7617,  # Old model sensitivity values
+                  0.8087, 0.5093, 0.9976, 0.9555), # New model sensitivity values
+  Model = rep(c("KNN", "Bagged KNN"), each = 4)
+)
+
+# Plotting the bar chart with a note added as a caption
+ggplot(sensitivity_data, aes(x = Class, y = Sensitivity, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7)) +
+  labs(title = "Figure 2.3: Comparison of Sensitivity by Class for KNN vs Bagged KNN",
+       y = "Sensitivity",
+       x = "Class",
+       fill = "Model",
+       caption = "Note: Model improvements are reflected in the increased sensitivity for each class.") +
+  geom_text(aes(label = paste0(round(Sensitivity * 100, 1), "%")),
+            position = position_dodge(width = 1), 
+            vjust = 0) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 20, hjust = 1),
+    plot.caption = element_text(hjust = 0, vjust = 1)
+  )
+
+
+
+```
+
+**Interpretation for Figure 2.3: Comparison of Sensitivity by Class for KNN vs Bagged KNN:**
+
+The bar chart compares the sensitivity (True Positive Rate) of KNN and Bagged KNN across four different classes: Defender, Forward, Goalkeeper, and Midfielder. Sensitivity measures the proportion of actual positives correctly identified by the model.
+
+-   **Defender**: The Bagged KKN model shows an improvement from 66.4% to 80.9% sensitivity, indicating better performance in correctly identifying defenders.
+
+-   **Forward**: There's a significant improvement in the new model, with sensitivity increasing from 26.8% to 50.9%.
+
+-   **Goalkeeper**: Both models perform exceptionally well with goalkeepers, with the Bagged KNN model showing a slight improvement from 99.8% to 99.2%.
+
+-   **Midfielder**: The Bagged KNN model also shows improved sensitivity for midfielders, going from 76.2% to 95.6%.
+
+The graph clearly visualizes the overall enhancement in the Bagged KNN's ability to correctly identify true positives in each class, which is particularly notable in the Forward and Midfielder classes.
+
+-  Below, we are calculating metrics to display in the comparison bar chart
+
+```{r}
+# Precision and recall values for the old model
+precision_old <- c(0.6211, 0.62783, 0.7708, 0.6253)
+recall_old <- c(0.6638, 0.26759, 0.9921, 0.7617)
+
+# Precision and recall values for the new model
+precision_new <- c(0.7539, 0.7582, 0.9057, 0.8277)
+recall_new <- c(0.8087, 0.5093, 0.9976, 0.9555)
+
+# Calculate average precision and recall for old model
+avg_precision_old <- mean(precision_old)
+avg_recall_old <- mean(recall_old)
+
+# Calculate F1 score for old model
+f1_score_old <- 2 * (avg_precision_old * avg_recall_old) / (avg_precision_old + avg_recall_old)
+
+# Calculate average precision and recall for new model
+avg_precision_new <- mean(precision_new)
+avg_recall_new <- mean(recall_new)
+
+# Calculate F1 score for new model
+f1_score_new <- 2 * (avg_precision_new * avg_recall_new) / (avg_precision_new + avg_recall_new)
+
+# Print the results
+cat("Old Model - Precision:", avg_precision_old, "Recall:", avg_recall_old, "F1 Score:", f1_score_old, "\n")
+cat("New Model - Precision:", avg_precision_new, "Recall:", avg_recall_new, "F1 Score:", f1_score_new, "\n")
+
+
+```
+
+
+```{r}
+# Calculated average metrics for old and new models, now including accuracy
+avg_metrics <- data.frame(
+  Metric = rep(c("Accuracy", "Precision", "Recall", "F1 Score"), 2),
+  Value = c(0.6712, avg_precision_old, avg_recall_old, f1_score_old,   # Old model metrics
+            0.8177, avg_precision_new, avg_recall_new, f1_score_new),  # New model metrics
+  Model = rep(c("KNN", "Bagged KNN "), each = 4)
+)
+
+# Plotting the metrics
+ggplot(avg_metrics, aes(x = Metric, y = Value, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7)) +
+  geom_text(
+    aes(label = sprintf("%.1f%%", Value * 100)),  # Format as percentage
+    position = position_dodge(width = 0.7),
+    vjust = -0.3,
+    color = "black" ) +
+  labs(
+    y = "Value",
+    x = "Metric",
+    title = "Figure 2.4: Comparison of KNN vs Bagged KNN Metrics",
+    caption = "Note: Values are represented as percentages.") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.title = element_blank(),
+    plot.caption = element_text(hjust = 0, vjust = 1.5)
+  )
+
+
+```
+
+**Interpretation for Figure 2.4: KNNvs Bagged KNN Metrics:**
+
+1.  **Accuracy**: Bagged KNN model has performed better than the KNN model, which measures the proportion of true results (both true positives and true negatives) among the total number of cases examined.
+
+2.  **F1 Score**: The F1 Score is the harmonic mean of Precision and Recall. It is a measure of a test's accuracy that considers both the precision and the recall. The Bagged KNN model shows a very slight improvement in the F1 Score over the KNN model.
+
+3.  **Precision**: Precision refers to the ratio of true positives to the sum of true positives and false positives. It indicates the quality of the positive predictions. The Bagged KNN model has a marginally higher Precision compared to the KNN model, suggesting that it makes fewer false positive errors.
+
+4.  **Recall**: Also known as Sensitivity, Recall measures the ratio of true positives to the sum of true positives and false negatives. It indicates the model's ability to find all the relevant cases within a dataset. The Bagged KNN model shows a marginal improvement in Recall, suggesting it is better at identifying positive instances.
+
+In summary, the Bagged KNN model has shown marginal improvements across all metrics compared to the KNN model, indicating it is better at correctly classifying cases, particularly in terms of reducing false positives and false negatives.
+
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+### [**Question 3:**]{.underline} **Test, whether a player's age affect their average pace (a combination of acceleration and sprint speed).**
+
+### [Methodology- Hypothesis Testing]{.underline}
+
+1.  **Data Preprocessing:**
+
+    -   Clean the dataset by handling missing values, outliers, and inconsistencies.
+
+2.  **Exploratory Data Analysis:**
+
+    -   Assess the relation between player's average pace and their age.
+
+3.  **Hypothesis Formulation:**
+
+    -   Formulate the null hypothesis (H0) and alternative hypothesis (H1) based on median age which will be determined during EDA process
+
+4.  **Splitting the dataset:**
+
+    -   Split the dataset into two groups based on median age
+
+5.  **Hypothesis Testing:**
+
+    -   Perform a t-test or an appropriate statistical test to compare the average pace between the two age groups.
+
+    -   Determine the p-value and assess its significance level (commonly set at 0.05) to decide whether to reject the null hypothesis.
+
+6.  **Results Interpretation:**
+
+    -   Interpret the results of hypothesis testing, stating whether there is a significant difference in average pace between the age groups.
+
+-   **Why using Hypothesis Testing?**
+
+    Hypothesis testing is used in the methodology outlined above to scientifically assess whether there is a significant difference in average pace between two specific age groups of football players. By conducting hypothesis testing, we can determine whether any observed differences in average pace between the age groups are statistically significant. This allows us to make informed conclusions about the impact of age on average pace. Hypothesis testing is essential for validating theories and models. A hypothesis test can support or refute a theory, which is fundamental to the scientific method.
+
+------------------------------------------------------------------------
+
+## [Step 2: Exploratory Data Analysis-3]{.underline}
+
+-   **Histogram for distribution of Age with Median**
+
+```{r}
+# Adding column indicating combination of acceleration and speed
+df<- df%>%
+  mutate(average_pace = (movement_acceleration + movement_sprint_speed) / 2)
+
+# Calculate median
+median_age <- median(df$age)
+
+# Plotting histogram showing the age distribution
+ggplot(df, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
+  geom_vline(xintercept = median_age, color = "red", linetype = "dashed", linewidth = 0.5) + 
+  labs(title = paste("Figure 3.1: Distribution of Age with Median (", median_age, ") Line"), 
+       x = "Age", y = "Frequency") +
+  labs(caption = "Note: The dashed red line indicates the median age, providing insight into the central tendency of the distribution.")
+
+
+```
+
+**Interpretation of Figure 3.1: Distribution of Age with Median (25) Line**
+
+The histogram shows that the ages in the dataset are spread out across a range from approximately 15 to 50 years old. The distribution of age is not symmetrical; it is left-skewed, indicating that a larger portion of the dataset is composed of younger individuals.
+
+**The dashed red line represents the median age, which is 25 years, hence we will consider 25 years for the hypothesis.** The skewness of the distribution suggests that the population has a younger demographic, with fewer individuals in the older age groups.
+
+------------------------------------------------------------------------
+
+-   **Boxplot of Average Pace by Age Group**
+
+```{r}
+# Plotting the boxplot of average pace by age group
+ggplot(df, aes(x = factor(cut(age, breaks = c(0, 25, Inf))), y = average_pace, fill = factor(cut(age, breaks = c(0, 25, Inf))))) +
+  geom_boxplot() +
+  labs(title = "Figure 3.2: Boxplot of Average Pace by Age Group", x = "Age Group", y = "Average Pace", fill = "Age Group",
+       caption = "Note: This boxplot visualizes the distribution of average pace across different age groups.")
+
+```
+
+**Interpretation of Figure 3.2: Boxplot of Average Pace by Age Group**
+
+The first group includes ages from just above 0 up to and including 25, while the second group includes ages above 25 up to infinity (or the maximum age in the dataset). Both boxes seem to have a similar range of average pace, indicated by the height of the boxes, which represents the interquartile range (IQR), the middle 50% of the data. The median pace (indicated by the line within each box) appears to be slightly higher for the older age group than for the younger one, suggesting that the median individual over 25 years old has a slower pace.
+
+------------------------------------------------------------------------
+
+## [Step 3: Hypothesis Formulation]{.underline}
+
+The hypothesis for the above will be as follow:
+
+**Null Hypothesis (H0)**= The median average pace of players under 25 is less than or equal to the median average pace of players 25 and above.
+
+**Alternative Hypothesis (H1)**= The median average pace of players under 25 is greater than the median average pace of players 25 and above.
+
+------------------------------------------------------------------------
+
+## [Step 4: Data Splitting]{.underline}
+
+```{r}
+under_25 <- df %>% filter(age < 25)
+over_25 <- df %>% filter(age >= 25)
+```
+
+------------------------------------------------------------------------
+
+## [Step 5: Model Building]{.underline}
+
+```{r}
+# Create a new column 'age_group' to categorize players into 'Under 25' and '25 and Above'
+df$age_group <- ifelse(df$age < 25, "Under 25", "25 and Above")
+
+# Ensuring 'average_pace' is treated as a numeric variable
+df$average_pace <- as.numeric(df$average_pace)
+
+# Q-Q plot to check normality
+qqnorm(df$average_pace, main = "Figure 3.3: Q-Q Plot of Average Pace", xlab = "Theoretical Quantiles", ylab = "Dataset Quantiles")
+qqline(df$average_pace, col = "steelblue", lwd = 2)
+# (OpenAI,2024)
+
+```
+**Interpretation for Figure 3.3: Q-Q Plot of Average Pace**
+The plot indicates that the distribution of average pace is not perfectly normal. Hence we will use a non parametric test.
+
+------------------------------------------------------------------------
+
+## [Step 6: Hypothesis Testing]{.underline}
+
+```{r}
+# Perform the Wilcoxon test
+wilcox.test_result <- wilcox.test(
+  average_pace ~ age_group, 
+  data = df, 
+  alternative = "greater"  # specifies a one-tailed test
+)
+
+# Print the results
+print(wilcox.test_result)
+```
+
+------------------------------------------------------------------------
+
+## [Step 7: Model Evaluation]{.underline}
+
+**Interpretation of our Analysis**
+
+Based on the Wilcoxon rank sum test results we conducted, which included a continuity correction, we found that the p-value was 1 when testing our hypothesis that younger players (under 25) have a higher average pace compared to players who are 25 years old and above. This p-value essentially indicates that the evidence from our data does not support the idea of a significant difference in average pace based on the age groups defined in our study.
+
+The p-value is the probability of obtaining test results at least as extreme as the results actually observed, under the assumption that the null hypothesis is true. A p-value of 1 is the highest possible value and indicates that there is no evidence against the null hypothesis. In other words, there is no statistical basis to claim that the average pace of players under 25 is greater than that of players aged 25 and above.
+
+Therefore, despite our expectations that younger players might exhibit higher average pace due to factors like agility or physical conditioning, the statistical test we used tells a different story. It suggests that, from a statistical standpoint, age might not play a significant role in determining a player's average pace as we had hypothesized. 
+
+**We fail to reject the null hypothesis.**There is no statistically significant evidence to suggest that the 'Under 25' group has a higher median average pace than the '25 and Above' group. This means that, based on the data, age does not appear to be a factor in determining the average pace of the players in the dataset.
+
+```{r}
+
+# Calculate median values
+median_under_25 <- median(df[df$age_group == "Under 25",]$average_pace)
+median_over_25 <- median(df[df$age_group == "25 and Above",]$average_pace)
+
+# (OpenAI, 2024)
+ # Plotting cumulative distribution
+ ggplot(df, aes(x = average_pace, color = age_group)) +
+  stat_ecdf(geom = "step", size = 0.75) +
+     scale_color_manual(values = c("Under 25" = "darkgreen", "25 and Above" = "red")) +
+    labs(title = "Figure 3.4: Cumulative Distribution Function of Average Pace by Age Group",
+          subtitle = paste("Wilcoxon rank sum test p-value:", round(wilcox.test_result$p.value, 3)),
+             x = "Average Pace",
+             y = "Cumulative Proportion",
+         color = "Age Group",
+      caption = "Note:The colored lines represent age groups, distinguishing players under 25 from those 25 and above.") +
+  theme_minimal() +
+geom_vline(xintercept = median_under_25, linetype = "dashed", color = "darkgreen", size = 0.75) +
+geom_vline(xintercept = median_over_25, linetype = "dashed", color = "red", size = 0.75) +
+    annotate("text", x = median_under_25, y = 0.40, label = paste("Median Average pace\nof Under 25:", round(median_under_25, 2)), hjust = 0, color = "darkgreen") +
+  annotate("text", x = median_over_25, y = 0.90, label = paste("Median Average pace\nof 25 and Above:", round(median_over_25, 2)), hjust = 1, color = "red")
+
+```
+**Interpretation of Figure 3.4: Cumulative Distribution Function of Average Pace by Age Group**
+
+The curves are very close together, implying that while there's a slight difference in median pace, the overall pace distribution between the two age groups is quite similar. This is particularly evident in the overlapping portions of the curves.
+
+In summary, while the younger group has a slightly higher median pace, the Wilcoxon rank sum test indicates that this difference is not statistically significant.  This is an important distinction because visual trends do not always correspond to statistical significance, especially when there is a large amount of overlap in the data, as seen here.
+
+### Business Value
+ - The business value of understanding the impact of age on a player's pace extends across various aspects of sports management, from on-field performance and team strategy to off-field activities like marketing, fan engagement, and financial management. This analysis can provide actionable insights that contribute to the competitive and financial success of football clubs and related industries. 
+ - Insights into how pace changes with age can guide injury prevention and management strategies. Older players might require different conditioning and recovery programs to maintain their pace and avoid injuries.
+ - Knowing how pace correlates with age can help in designing age-specific training and development programs and can also help in recruiting.
+
+
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+
+### [**Question 4:**]{.underline} **Predict a player's market value based on attributes such as age, overall rating, potential, and specific skill attributes (passing, dribbling, shooting) and other variables?**
+
+### [Methodology- Predictive Modeling with Regression]{.underline}
+
+1.  **Data Preprocessing:**
+
+    -   Clean the dataset by handling missing values, outliers, and inconsistencies.
+
+    -   Scale numerical features to ensure that attributes like age, overall rating, potential, and skill attributes have equal weight.
+
+2.  **Exploratory Data Analysis:**
+
+    -   Identify and select relevant features that significantly contribute to determining a player's market value.
+
+3.  **Splitting the dataset:**
+
+    -   Divide the dataset into training and testing sets to evaluate the model's performance accurately. An 70:30 split is commonly used, allocating 70% for training and 30% for testing
+
+4.  **Model Building:**
+
+    -   Implement stepwise linear regression models for features. Stepwise regression is a method of fitting regression models in which the choice of predictive variables is carried out by an automatic procedure, either by adding or subtracting predictors based on some criterion, usually a p-value threshold. (Stepwise Regression, 2024)
+
+5.  **Model Evaluation:**
+
+    -   Evaluate the model's performance on the testing dataset using appropriate metrics such as R-squared, Mean Absolute Error (MAE), Mean Squared Error (MSE), and Root Mean Squared Error (RMSE).
+
+-   **Why using Linear Regression?**
+
+We will use linear regression, including its variation like step-wise regression, because it is a powerful statistical method for modeling the relationship between a scalar dependent variable and one or more independent variables. By using a linear regression framework, we can easily extend the model to handle non-linear relationships by introducing polynomial or interaction terms if necessary. For stepwise regression model, the final model is often more interpretable because it includes fewer variables, making it easier to understand the influence of each predictor on the response variable.
+
+------------------------------------------------------------------------
+
+## [Step 1 & 2: Data Preprocessing and Exploratory Data Analysis-4]{.underline}
+
+-   **Histogram for distribution of Player's market value**
+
+```{r}
+
+# Transform the 'value_eur' with a log transformation to handle skewness #(OpenAI, 2024)
+df$value_eur_log <- log1p(df$value_eur)  # log1p is used to handle zero values
+
+# Create the histogram with log-transformed data
+ggplot(df, aes(x = value_eur_log)) +
+  geom_histogram(binwidth = 0.1, fill = "blue", alpha = 0.7) +
+  scale_x_continuous(name = "Market Value (EUR)", 
+                     breaks = scales::pretty_breaks(n = 10), 
+                     labels = scales::comma) +
+  scale_y_continuous(name = "Frequency", 
+                     labels = scales::comma) +
+  labs(title = "Figure 4.1 - Histogram of Distribution of Players' Market Value", caption = "Note: The above Histogram shows the distribution of Player's Market Value after a log transformation ") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        plot.title = element_text(hjust = 0.5))
+
+```
+
+**Interpretation for Figure 4.1: Histogram of Distribution of Players' Market Value**
+
+The histogram depicts the distribution of players' market values after a log transformation, which is evident from the x-axis being labeled with log-scaled values. The distribution shows that the majority of players have market values concentrated in the middle range of the log scale, with fewer players as the market value increases. The shape of the distribution appears to be roughly normal with a slight right skew, indicating that high-value players are rarer. The histogram provides a visual representation of how players' market values are spread out, highlighting the commonality of certain value ranges and the relative scarcity of very high values.
+
+-   **Handling missing values**
+
+```{r}
+# Imputing missing values with mean for each column (numeric columns only)
+numeric_df <- df[sapply(df, is.numeric)]
+
+numeric_df_imputed <- numeric_df
+
+#(OpenAI,2024)
+# Apply the mean for each column
+for(i in seq_along(numeric_df_imputed)) {
+  numeric_df_imputed[[i]] <- ifelse(is.na(numeric_df_imputed[[i]]), 
+                                    mean(numeric_df_imputed[[i]], na.rm = TRUE), 
+                                    numeric_df_imputed[[i]])
+}
+
+# Calculate the correlation matrix
+cor_matrix <- cor(numeric_df_imputed, use = "complete.obs")
+```
+
+-   **Checking for correlation of variables with Market Value (value_eur)**
+
+```{r}
+market_value_correlations <- cor_matrix[,'value_eur']
+sorted_correlations <- sort(market_value_correlations, decreasing = TRUE)
+
+# Filtering high correlations
+high_correlations <- sorted_correlations[sorted_correlations > 0.5 | sorted_correlations < -0.5]
+print(high_correlations)
+```
+
+-   **Correlation Matrix with Market Value**
+
+```{r}
+
+cor_matrix_withValueEUR3 <- cor(df[c("value_eur", "age", "international_reputation", "movement_reactions", "mentality_composure", "potential")], use = "complete.obs")
+
+# Correlation matrix visualization with specified variables
+corrplot(cor_matrix_withValueEUR3, 
+         method = "circle", 
+          type = "upper",
+       tl.col = "black",
+        order = "hclust",
+         title= "Figure 4.2 - Correlation Matrix with Market Value", 
+         mar = c(0,0,1,0), 
+       tl.srt = 30, 
+       tl.cex = 0.75, 
+       cex.main = 0.9)
+
+# note below the plot
+mtext("Note: Stronger correlations with market value are indicated by larger circle sizes and darker colors.", side = 1, line = 4, cex = 0.7)
+```
+
+**Interpretation of Figure 4.2: Correlation Matrix with Market Value**
+
+The correlation matrix provided visualizes the strength and direction of the relationships between **`value_eur`** (the market value of a player) and several other variables:
+
+-   **Diagonal Line (value_eur with value_eur):** This is always 1, as a variable is perfectly correlated with itself.
+
+-   **Age:** There seems to be a weak to moderate negative correlation with market value, suggesting that as age increases, market value may tend to decrease.
+
+-   **International Reputation:** Shows a strong positive correlation with market value, indicating that players with higher international reputation tend to have higher market values.
+
+-   **Movement Reactions:** There is a positive correlation with market value, implying that better movement reactions are associated with higher market values.
+
+-   **Mentality Composure:** The correlation with market value is positive but less strong than for international reputation, indicating a weaker association between mentality composure and market value.
+
+-   **Potential:** This variable shows a strong positive correlation with market value, suggesting that players with higher potential are likely to have higher market values.
+
+The size of the circles represents the strength of the correlation, with larger circles indicating stronger relationships. The color indicates the direction of the correlation: blue for positive and red for negative. Darker shades represent stronger correlations.
+
+### [Finding Top correlated variables with 'Market Value' (value_eur)]{.underline}
+
+```{r}
+top_correlated_variables1 <- data.frame(
+  variable = c("release_clause_eur", "wage_eur", "international_reputation", "potential","movement_reactions", "mentality_composure", "dribbling", "passing",
+               "mentality_vision", 
+               "power_shot_power"),
+  correlation_with_value_eur5 = c(0.98164016, 0.82349448, 0.63110334, 
+                                  0.52741386, # Placeholder values for other variables
+                                 0.49245624, 0.38880720, 0.38677141, 0.38664601, 0.32428565, 0.30162636)
+)
+
+top_correlated_variables_sorted <- top_correlated_variables1[order(-top_correlated_variables1$correlation_with_value_eur5),]
+
+# Select the top 10 variables
+top_10_correlated_variables <- head(top_correlated_variables_sorted, 10)
+
+# Print the top 10 variables
+print(top_10_correlated_variables)
+```
+
+------------------------------------------------------------------------
+
+-   **Bargraph for top 10 Variables Correlated with Market Value EUR**
+
+```{r}
+# Create a bar plot for the top 10 correlated variables with the coefficient values on the bars (OpenAI, 2024)
+ggplot(top_10_correlated_variables, aes(x = reorder(variable, -correlation_with_value_eur5), y = correlation_with_value_eur5)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # Flip coordinates to make a horizontal bar plot
+  geom_text(aes(label = sprintf("%.2f", correlation_with_value_eur5)), hjust = -0.2) +  # Add the correlation values as text labels
+  labs(title = "Figure 4.3 - Top 10 Variables Correlated with Market Value EUR", caption = "Note: The above are the top 10 variables that have significant impact on the target variable (value_eur)",
+       x = "Correlation Coefficient",
+       y = "Variable") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))  # Center the plot title
+```
+
+**Interpretation for Figure 4.3 - Top 10 Variables Correlated with Market Value EUR**
+
+As per the results, it is observed that release_clause_eur has the highest correlation and significant impact on the value_eur with power_shot_power having a relatively less correlation with value_eur.
+
+------------------------------------------------------------------------
+
+-   **Scatterplot for correlation of individual variables**
+
+```{r}
+# scatterplot for 'value_eur' vs 'movement reactions'
+ggplot(df, aes(x = movement_reactions, y = value_eur)) + 
+  geom_point(alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() + 
+  labs(title = "Figure 4.4 - Scatterplot of Movement Reactions vs Market Value",
+       caption= "Note: The above scatterplot shows relationship between 'Movement Reactions' and 'Market Value (EUR) ",
+       x = "Movement Reactions",
+       y = "Market Value (EUR)")
+```
+
+**Interpretation for Figure 4.4 - Scatterplot of Movement Reactions vs Market Value**
+
+The scatterplot shows a positive relationship between 'Movement Reactions' and 'Market Value (EUR)' for players. As the movement reactions score increases, there tends to be an increase in the market value. The distribution of data points becomes more dispersed at higher values of movement reactions, which may indicate greater variability in market value for players with high movement reaction scores. The trend line suggests that movement reactions are a predictor of market value, but the wide spread of points, especially at higher reaction scores, implies that other factors also play a significant role in determining a player's market value.
+
+------------------------------------------------------------------------
+
+-   **Scatterplot for 'value_eur' vs 'international_reputation'**
+
+```{r}
+ggplot(df, aes(x = international_reputation, y = value_eur)) + 
+  geom_point(alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() + 
+  labs(title = "Figure 4.5 - Scatterplot of International Reputation vs Market Value",caption= "Note: The above scatterplot shows relationship between 'International Reputation' and 'Market Value (EUR) ",
+       x = "International Reputation",
+       y = "Market Value (EUR)")
+```
+
+**Interpretation for Figure 4.5 - Scatterplot of International Reputation vs Market Value**
+
+The scatterplot illustrates the relationship between football players' international reputation and their market values. Each point represents a player, with international reputation on the x-axis and market value on the y-axis. There appears to be a positive correlation: as international reputation increases, market value tends to rise. The trend line reinforces this positive relationship. It's also noticeable that players with the highest international reputation have a wider range of market values, which may suggest that factors other than reputation contribute significantly to the market value at the highest levels of reputation.
+
+------------------------------------------------------------------------
+
+-   **Scatterplot for 'release_clause_eur' vs 'value_eur'**
+
+```{r}
+ggplot(df, aes(x = release_clause_eur, y = value_eur)) + 
+  geom_point(alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() + 
+  labs(title = "Figure 4.6 - Scatterplot of Release clause vs Market Value",caption= "Note: The above scatterplot shows relationship between 'Release Clause' and 'Market Value (EUR) ",
+       x = "Release Clause",
+       y = "Market Value (EUR)")
+
+```
+
+**Interpretation for Figure 4.6 - Scatterplot of Release clause vs Market Value**
+
+The scatterplot presents a comparison between football players' release clause amounts and their market values. The trend is strongly positive, showing that players with higher release clauses generally have higher market values. The tight clustering of data points along the trend line indicates a strong linear relationship, suggesting that the release clause is a good predictor of market value. This could imply that the release clause is set in close consideration of a player's perceived market value.
+
+------------------------------------------------------------------------
+
+-   **Scatterplot for 'wage_eur' vs 'value_eur'**
+
+```{r}
+ggplot(df, aes(x = wage_eur, y = value_eur)) + 
+  geom_point(alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() + 
+  labs(title = "Figure 4.7 - Scatterplot of Wage vs Market Value",caption= "Note: The above scatterplot shows relationship between 'Wage' and 'Market Value (EUR) ",
+       x = "Wage",
+       y = "Market Value (EUR)")
+```
+
+**Interpretation of Figure 4.7: Scatterplot of Wage vs Market Value**
+
+The scatterplot displays the relationship between football players' wages and their market values. The data points suggest a positive correlation, as players with higher wages also tend to have higher market values. The trend line indicates this positive trajectory, although the spread of data points suggests that while wage is a significant predictor of market value, there are other factors also influencing a player's value, given the variation at different wage levels.
+
+------------------------------------------------------------------------
+
+-   **Scatterplot for 'potential' vs 'value_eur'**
+
+```{r}
+ggplot(df, aes(x = potential, y = value_eur)) + 
+  geom_point(alpha = 0.6) + 
+  geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() + 
+  labs(title = "Figure 4.8 - Scatterplot of Potential vs Market Value",caption= "Note: The above scatterplot shows relationship between 'Potential' and 'Market Value (EUR) ",
+       x = "Potential",
+       y = "Market Value (EUR)")
+```
+
+**Interpretation of Figure 4.8: Scatterplot of Potential vs Market Value**
+
+The scatterplot demonstrates the relationship between the potential of football players and their market values. It shows that players with higher potential tend to have higher market values. The distribution of points indicates a positive correlation, particularly noticeable at the higher end of the potential scale where the market values vary more widely. This suggests that while potential is a strong indicator of market value, other factors also contribute to a player's valuation, especially among those with the highest potential.
+
+------------------------------------------------------------------------
+
+## [Step 3: Data Splitting]{.underline}
+
+```{r}
+# Create a train/test split
+set.seed(123) 
+index <- createDataPartition(numeric_df_imputed$value_eur, p = 0.7, list = FALSE, times = 1)
+train_data_4 <- numeric_df_imputed[index, ]
+test_data_4 <- numeric_df_imputed[-index, ]
+```
+
+------------------------------------------------------------------------
+
+## [Step 4: Model Building]{.underline}
+
+```{r}
+options(scipen = 999)
+# Fit the initial full model using only the training data
+full_model_4 <- lm(value_eur ~ release_clause_eur + wage_eur + international_reputation + 
+                 potential + movement_reactions + mentality_composure + dribbling, 
+                 data = train_data_4)
+
+# Perform stepwise selection on the training data
+stepwise_selected_model_4 <- step(full_model_4, direction = "both")
+
+
+# Summary of the stepwise selected model
+summary(stepwise_selected_model_4)
+
+options(scipen = 999)
+```
+
+The stepwise regression results show a process of iteratively refining the model by evaluating the statistical significance of each variable and removing the least significant ones to improve the model's AIC (Akaike Information Criterion). Here's a brief interpretation:
+
+-   The AIC is used to compare models; a lower AIC suggests a better model. The stepwise process seeks to minimize the AIC.
+
+-   Initially, the model included **mentality_composure** and **potential** along with other variables.
+
+-   As the stepwise process progresses, **mentality_composure** and **potential** are removed because their exclusion leads to a lower AIC, suggesting that the model without these variables is more efficient.
+
+-   The final model includes **release_clause_eur**, **wage_eur**, **international_reputation**, **movement_reactions**, and **dribbling**.
+
+-   All variables in the final model are highly statistically significant, indicated by p-values of less than **2e-16**.
+
+-   The **Residual standard error** is quite high, but given the scale of **value_eur** (which seems to be in the millions), this might be expected.
+
+-   The **Multiple R-squared** of 0.9713 indicates that the model explains 97.13% of the variability in **value_eur**, which is exceptionally high and suggests a very good fit to the training data.
+
+-   The **F-statistic** is very large, with a p-value of less than **2.2e-16**, indicating that the model is statistically significant and the predictors are jointly significant.
+
+### **Final model**
+
+```{r}
+# Now, using the model selected by stepwise regression to fit the final model on the training data
+final_model_4 <- lm(formula(stepwise_selected_model_4), data = train_data_4)
+
+# Summary of the final model
+summary(final_model_4)
+
+```
+
+------------------------------------------------------------------------
+
+## [Step 5: Model Evaluation]{.underline}
+
+```{r}
+
+# Checking VIF to diagnose multicollinearity
+vif_final_model_4 <- vif(final_model_4)
+
+# Display VIF values
+print(vif_final_model_4)
+
+# Evaluating this final model on the test_data to assess its performance on unseen data
+
+# Predictions on the test data
+test_predictions_4 <- predict(final_model_4, newdata = test_data_4)
+
+# To evaluate the model's performance, calculate metrics such as RMSE or MAE
+test_residuals_4 <- test_data_4$value_eur - test_predictions_4
+RMSE <- sqrt(mean(test_residuals_4^2))
+
+# Model diagnostics: Plotting diagnostic plots for the final model
+par(mfrow = c(2, 2))
+plot(final_model_4)
+
+# Residual analysis: Checking for patterns in residuals
+plot(test_residuals_4)
+```
+
+## [Interpretation]{.underline}
+
+1.  **Residuals vs Fitted Plot:**
+
+    -   This plot checks the assumption of linearity and homoscedasticity (equal variances).
+
+    -   Ideally, residuals should be randomly dispersed around the horizontal line (red line), indicating that the relationship is linear and the variances of the error terms are equal.
+
+    -   The clear pattern in this plot, with residuals fanning out as the fitted values increase, suggests that the model may be violating the assumption of homoscedasticity.
+
+2.  **Q-Q Plot (Quantile-Quantile Plot):**
+
+    -   This plot is used to check the normality of residuals.
+
+    -   Points should fall along the straight dashed line if residuals are normally distributed.
+
+    -   The heavy tails seen here, with points deviating from the line at both ends, suggest that the residuals are not normally distributed, which is a violation of one of the regression assumptions.
+
+3.  **Scale-Location Plot (or Spread-Location Plot):**
+
+    -   This plot is another way to check homoscedasticity.
+
+    -   Similar to the Residuals vs Fitted plot, it shows the spread of residuals. A horizontal line with equally spread points suggests homoscedasticity.
+
+    -   The pattern here indicates that errors have non-constant variance, which is again a violation of the homoscedasticity assumption.
+
+4.  **Residuals vs Leverage Plot:**
+
+    -   This plot helps to identify influential cases, which are data points that have a significant impact on the calculation of the regression coefficients.
+
+    -   The Cook's distance lines (dashed lines) help to determine the influential points. Points that are outside the Cook's distance lines may be considered influential.
+
+    -   In this plot, there are a few points that stand out with higher leverage, indicating potential influential points that might unduly affect the model's performance.
+
+5.  **Plot of Residuals Indexed by Observation:**
+
+    -   It's a simple plot of residuals against their index, which is useful for spotting outliers or patterns in the residuals.
+
+    -   Ideally, there should be no pattern, suggesting that the residuals are randomly distributed.
+
+    -   This plot shows some outliers, but the overall pattern does not indicate obvious issues with non-randomness in the residuals.
+
+## [Actual vs Predicted Market Value]{.underline}
+```{r}
+
+#Considering actual values from the dataset
+
+actual_values_4 <- test_data_4$value_eur
+
+# Create a data frame for plotting
+comparison_df <- data.frame(Actual = actual_values_4, Predicted = test_predictions_4)
+
+#Adjusting the scientific notations
+options(scipen = 999)
+
+# Plot
+ggplot(comparison_df, aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  # Line y=x for reference
+  labs(title = "Figure 4.9: Actual vs Predicted Market Value", 
+       caption = "Note: The red dashed line represents the ideal scenario where the predicted values perfectly match the actual values.",
+       x = "Actual Market Value (EUR)",
+       y = "Predicted Market Value (EUR)") +
+  theme_minimal()
+
+#Reseting the value
+options(scipen = 0)
+```
+
+**Interpretation for Figure 4.9: Actual vs Predicted Market Value:**
+
+The scatterplot "Actual vs Predicted Market Value" displays a comparison between the actual market values of players (x-axis) and the values predicted by the regression model (y-axis). The red dashed line represents the ideal scenario where the predicted values perfectly match the actual values. The points clustered around this line indicate a generally strong correlation between the model's predictions and the actual data, suggesting that the model is a good fit for the observed market values. However, there are some outliers, particularly at the higher end of the market value range, where the model's predictions diverge from the actual values, indicating potential areas for model refinement.
+
+
+
+
+
+------------------------------------------------------------------------
+
+# IV. Conclusion
+
+**Our Findings**
+-  Lasso regularization helps in identifying and prioritizing key attributes, allowing an understanding of factors influencing player ratings. The RMSE evaluation provides a comprehensive assessment of the model's predictive accuracy and potential areas for improvement.
+
+-  KKN Model has a good accuracy & is good at predicting Goalkeepers. The model seems to be moderately reliable, but improvements could be made, especially in predicting Forward and Midfielder positions, which have lower sensitivity.
+
+-  Wilcoxon rank sum test  indicates no significant difference in average pace between players under 25 and those 25 and above, despite visual difference. Age, therefore, does not seem to be a predictor of average pace in this dataset.
+
+-  The linear regression model, with a high R-squared value, indicates a strong predictive capability, identifying key player attributes that correlate with market value. Release clause, wages, and international reputation are the strongest predictors, signifying that market value isn't just about player performance stats but also contractual and reputation factors.
+
+The findings from our analysis reveal significant insights into the factors influencing football players' performance, market value, and the impact of age on pace. The predictive models and hypothesis tests underscore the intricate relationship between a player's attributes and their on-field roles and values. While some results align with intuitive expectations, such as the correlation between international reputation and market value, others prompt a deeper investigation into the nuances of player development and valuation. This study not only enhances our understanding of football analytics but also lays the groundwork for future research in sports analytics.
+
+------------------------------------------------------------------------
+
+# V. References
+
+-   A host of comprehensive sports datasets for research, analysis, data modeling, data-visualization, predictions, machine-learning ETC. Sports. (n.d.). <https://sports-statistics.com/sports-data/sports-data-sets-for-data-modeling-visualization-predictions-machine-learning/>
+
+-   Developing research questions. Library. (2023, March 3). <https://www.monash.edu/library/help/assignments-research/developing-research-questions>
+
+-  OpenAI. (2021). ChatGPT (Version 3.5). OpenAI.https://chat.openai.com/
+
+-  Lasso Regression in R Programming. (2023, December 19). GeeksforGeeks. https://www.geeksforgeeks.org/lasso-regression-in-r-programming/
+
+-   Brownlee, J. (2019, August 22). Feature Selection with the Caret R Package. MachineLearningMastery.com. https://machinelearningmastery.com/feature-selection-with-the-caret-r-package/
+
+-   How to Plot Predicted Values in R. (2021, December 19). GeeksforGeeks. https://www.geeksforgeeks.org/how-to-plot-predicted-values-in-r/
+
+-  Stepwise regression. (2024, January 21). Wikipedia.https://en.wikipedia.org/wiki/Stepwise_regression
+
